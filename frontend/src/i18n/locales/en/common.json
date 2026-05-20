@@ -247,6 +247,7 @@
     "typeMongoDB": "MongoDB",
     "typeKafka": "Kafka",
     "typeK8s": "K8S Cluster",
+    "typeEtcd": "Etcd",
     "typeSerial": "Serial Port",
     "driver": "Database Driver",
     "driverMySQL": "MySQL",
@@ -307,6 +308,11 @@
     "redisPolicyDenyList": "Deny List (always reject)",
     "redisPolicyHint": "Commands not listed will require user confirmation. Rules support * wildcards; broad patterns such as * may allow high-risk commands or deny many commands, so configure them carefully.",
     "redisPolicyPlaceholder": "Press Enter to add, comma-separated for batch import",
+    "etcdPolicy": "Etcd Command Policy",
+    "etcdPolicyAllowList": "Allow List (execute without confirmation)",
+    "etcdPolicyDenyList": "Deny List (always reject)",
+    "etcdPolicyHint": "Commands not listed will require user confirmation. Rules support * wildcards; broad patterns such as * may allow high-risk commands or deny many commands, so configure them carefully.",
+    "etcdPolicyPlaceholder": "Press Enter to add, comma-separated for batch import",
     "mongoPolicy": "MongoDB Operation Policy",
     "mongoPolicyAllowTypes": "Allowed Operation Types",
     "mongoPolicyDenyTypes": "Denied Operation Types",
@@ -421,6 +427,7 @@
     "policyTestPlaceholder": "Type a command to test...",
     "policyTestSqlPlaceholder": "Type SQL to test, e.g. SELECT * FROM users",
     "policyTestRedisPlaceholder": "Type Redis command to test, e.g. GET user:1",
+    "policyTestEtcdPlaceholder": "Type Etcd command to test, e.g. get /config/key",
     "policyTestMongoPlaceholder": "Type MongoDB operation to test, e.g. find",
     "policyTestKafkaPlaceholder": "Type Kafka operation to test, e.g. topic.read orders",
     "policyTestAllow": "Allowed",
@@ -448,20 +455,50 @@
       "deleteConfirmTitle": "Confirm Delete Policy Group",
       "deleteConfirm": "Delete policy group \"{{name}}\"? This action cannot be undone.",
       "builtin": {
-        "linux-readonly": { "name": "Linux Read-Only", "desc": "Common Linux read-only commands" },
-        "k8s-readonly": { "name": "Kubernetes Read-Only", "desc": "Kubernetes read-only commands" },
-        "k8s-dangerous-deny": { "name": "Kubernetes Dangerous Deny", "desc": "Deny dangerous Kubernetes commands" },
-        "docker-readonly": { "name": "Docker Read-Only", "desc": "Docker read-only commands" },
-        "dangerous-deny": { "name": "Dangerous Command Deny", "desc": "Deny dangerous system commands" },
-        "sql-readonly": { "name": "SQL Read-Only", "desc": "Allow query-only SQL statements" },
-        "sql-dangerous-deny": { "name": "SQL Dangerous Deny", "desc": "Deny dangerous SQL operations" },
-        "redis-readonly": { "name": "Redis Read-Only", "desc": "Allow Redis read-only commands" },
-        "redis-dangerous-deny": { "name": "Redis Dangerous Deny", "desc": "Deny dangerous Redis commands" },
+        "linux-readonly": {
+          "name": "Linux Read-Only",
+          "desc": "Common Linux read-only commands"
+        },
+        "k8s-readonly": {
+          "name": "Kubernetes Read-Only",
+          "desc": "Kubernetes read-only commands"
+        },
+        "k8s-dangerous-deny": {
+          "name": "Kubernetes Dangerous Deny",
+          "desc": "Deny dangerous Kubernetes commands"
+        },
+        "docker-readonly": {
+          "name": "Docker Read-Only",
+          "desc": "Docker read-only commands"
+        },
+        "dangerous-deny": {
+          "name": "Dangerous Command Deny",
+          "desc": "Deny dangerous system commands"
+        },
+        "sql-readonly": {
+          "name": "SQL Read-Only",
+          "desc": "Allow query-only SQL statements"
+        },
+        "sql-dangerous-deny": {
+          "name": "SQL Dangerous Deny",
+          "desc": "Deny dangerous SQL operations"
+        },
+        "redis-readonly": {
+          "name": "Redis Read-Only",
+          "desc": "Allow Redis read-only commands"
+        },
+        "redis-dangerous-deny": {
+          "name": "Redis Dangerous Deny",
+          "desc": "Deny dangerous Redis commands"
+        },
         "kafka-metadata-readonly": {
           "name": "Kafka Metadata Read-Only",
           "desc": "Allow cluster, broker, topic, and consumer group metadata reads"
         },
-        "kafka-message-read": { "name": "Kafka Message Read", "desc": "Allow reading message payloads" },
+        "kafka-message-read": {
+          "name": "Kafka Message Read",
+          "desc": "Allow reading message payloads"
+        },
         "kafka-schema-readonly": {
           "name": "Schema Registry Read-Only",
           "desc": "Allow reading Schema Registry metadata and schemas"
@@ -474,13 +511,25 @@
           "name": "Kafka Operator",
           "desc": "Allow topic, partition, and consumer group offset management"
         },
-        "kafka-security-admin": { "name": "Kafka Security Admin", "desc": "Allow Kafka ACL management" },
+        "kafka-security-admin": {
+          "name": "Kafka Security Admin",
+          "desc": "Allow Kafka ACL management"
+        },
         "kafka-dangerous-deny": {
           "name": "Kafka Dangerous Deny",
           "desc": "Deny destructive and security-sensitive Kafka operations"
         }
       }
-    }
+    },
+    "usernameOptional": "Username (optional)",
+    "selectSshTunnel": "Select SSH Tunnel",
+    "useTLS": "Use TLS",
+    "commandTimeout": "Command Timeout (s)",
+    "tlsSkipVerify": "Skip Certificate Verification",
+    "tlsServerName": "TLS Server Name",
+    "tlsCAFile": "CA Certificate Path",
+    "tlsCertFile": "Client Certificate Path",
+    "tlsKeyFile": "Client Key Path"
   },
   "sshKey": {
     "title": "SSH Keys",
@@ -1152,7 +1201,6 @@
     "batchDescription": "The following {{count}} operations require your approval",
     "alwaysAllow": "Always Allow",
     "approve": "Approve",
-    "allow": "Allow",
     "scopeAll": "All Assets"
   },
   "audit": {
@@ -1939,7 +1987,16 @@
     "expandFolder": "Expand folder",
     "collapseFolder": "Collapse folder",
     "loadData": "Load data",
-    "tableRestoredHint": "{{table}} restored — click or press {{shortcut}} to load"
+    "tableRestoredHint": "{{table}} restored — click or press {{shortcut}} to load",
+    "etcdPrefix": "Key prefix...",
+    "noKeys": "No keys",
+    "showingNKeys": "Showing {{count}} keys",
+    "keys": "Keys",
+    "cluster": "Cluster",
+    "members": "Members",
+    "noMembers": "No members",
+    "saveSuccess": "Saved successfully",
+    "deleteSuccess": "Deleted successfully"
   },
   "systemStatus": {
     "title": "Status",
@@ -2065,5 +2122,7 @@
       "empty": "No prompt snippets yet",
       "openManager": "Create in Snippets page"
     }
-  }
+  },
+  "saveSuccess": "Saved successfully",
+  "deleteSuccess": "Deleted successfully"
 }

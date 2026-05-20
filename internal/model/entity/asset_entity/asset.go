@@ -20,6 +20,7 @@ const (
 	AssetTypeKafka    = "kafka"
 	AssetTypeK8s      = "k8s"
 	AssetTypeSerial   = "serial"
+	AssetTypeEtcd     = "etcd"
 )
 
 // DatabaseDriver 数据库驱动类型
@@ -237,6 +238,23 @@ type K8sConfig struct {
 func (c *K8sConfig) GetCredentialID() int64 { return 0 }
 func (c *K8sConfig) GetPassword() string    { return c.Kubeconfig }
 
+// EtcdConfig etcd 类型的特定配置
+type EtcdConfig struct {
+	Host                  string `json:"host"`
+	Port                  int    `json:"port"`
+	Username              string `json:"username,omitempty"`
+	Password              string `json:"password,omitempty"`
+	CredentialID          int64  `json:"credential_id,omitempty"`
+	TLS                   bool   `json:"tls,omitempty"`
+	TLSInsecure           bool   `json:"tls_insecure,omitempty"`
+	TLSServerName         string `json:"tls_server_name,omitempty"`
+	TLSCAFile             string `json:"tls_ca_file,omitempty"`
+	TLSCertFile           string `json:"tls_cert_file,omitempty"`
+	TLSKeyFile            string `json:"tls_key_file,omitempty"`
+	CommandTimeoutSeconds int    `json:"command_timeout_seconds,omitempty"`
+	SSHAssetID            int64  `json:"ssh_asset_id,omitempty"` // Deprecated: use Asset.SSHTunnelID
+}
+
 // SerialConfig 串口（COM/TTY）类型的特定配置
 type SerialConfig struct {
 	PortPath    string `json:"port_path"`              // 串口路径，如 COM3, /dev/ttyUSB0
@@ -301,6 +319,16 @@ type K8sPolicy = policy.K8sPolicy
 // DefaultK8sPolicy 返回默认 K8S 权限策略
 var DefaultK8sPolicy = policy.DefaultK8sPolicy
 
+// EtcdPolicy etcd 权限策略（类型别名，定义在 policy 包）
+type EtcdPolicy = policy.EtcdPolicy
+
+// DefaultEtcdPolicy 返回默认 etcd 权限策略
+var DefaultEtcdPolicy = policy.DefaultEtcdPolicy
+
+// EtcdConfig PasswordSource implementation
+func (c *EtcdConfig) GetCredentialID() int64 { return c.CredentialID }
+func (c *EtcdConfig) GetPassword() string    { return c.Password }
+
 // SerialConfig PasswordSource implementation（串口无密码，返回空）
 func (c *SerialConfig) GetCredentialID() int64 { return 0 }
 func (c *SerialConfig) GetPassword() string    { return "" }
@@ -340,6 +368,11 @@ func (a *Asset) IsK8s() bool {
 // IsSerial 判断是否串口类型
 func (a *Asset) IsSerial() bool {
 	return a.Type == AssetTypeSerial
+}
+
+// IsEtcd 判断是否 etcd 类型
+func (a *Asset) IsEtcd() bool {
+	return a.Type == AssetTypeEtcd
 }
 
 // GetSSHConfig 解析SSH配置
@@ -450,6 +483,24 @@ func (a *Asset) SetK8sConfig(cfg *K8sConfig) error {
 	return nil
 }
 
+// GetEtcdConfig 解析 etcd 配置
+func (a *Asset) GetEtcdConfig() (*EtcdConfig, error) {
+	if !a.IsEtcd() {
+		return nil, errors.New("资产不是 etcd 类型")
+	}
+	return jsonfield.Unmarshal[EtcdConfig](a.Config, "etcd配置")
+}
+
+// SetEtcdConfig 序列化 etcd 配置到 Config 字段
+func (a *Asset) SetEtcdConfig(cfg *EtcdConfig) error {
+	s, err := jsonfield.Marshal(cfg, "etcd配置")
+	if err != nil {
+		return err
+	}
+	a.Config = s
+	return nil
+}
+
 // GetSerialConfig 解析串口配置
 func (a *Asset) GetSerialConfig() (*SerialConfig, error) {
 	if !a.IsSerial() {
@@ -553,6 +604,23 @@ func (a *Asset) SetK8sPolicy(p *K8sPolicy) error {
 	return nil
 }
 
+// GetEtcdPolicy 解析 etcd 权限策略
+func (a *Asset) GetEtcdPolicy() (*EtcdPolicy, error) {
+	return jsonfield.UnmarshalOrDefault[EtcdPolicy](a.CmdPolicy, "etcd权限策略")
+}
+
+// SetEtcdPolicy 序列化 etcd 权限策略
+func (a *Asset) SetEtcdPolicy(p *EtcdPolicy) error {
+	s, err := jsonfield.MarshalOrClear(p, func(v *EtcdPolicy) bool {
+		return v.IsEmpty()
+	}, "etcd权限策略")
+	if err != nil {
+		return err
+	}
+	a.CmdPolicy = s
+	return nil
+}
+
 // Validate 校验资产必填字段和类型配置的完整性
 func (a *Asset) Validate() error {
 	if a.Name == "" {
@@ -578,6 +646,8 @@ func (a *Asset) Validate() error {
 		return a.validateK8s()
 	case AssetTypeSerial:
 		return a.validateSerial()
+	case AssetTypeEtcd:
+		return a.validateEtcd()
 	default:
 		// 扩展资产类型由扩展自行校验
 		return nil
@@ -719,6 +789,21 @@ func (a *Asset) validateK8s() error {
 	return nil
 }
 
+// validateEtcd 校验 etcd 类型特定配置
+func (a *Asset) validateEtcd() error {
+	cfg, err := a.GetEtcdConfig()
+	if err != nil {
+		return fmt.Errorf("etcd配置无效: %w", err)
+	}
+	if cfg.Host == "" {
+		return errors.New("etcd主机地址不能为空")
+	}
+	if cfg.Port <= 0 {
+		return errors.New("etcd端口无效")
+	}
+	return nil
+}
+
 // validateSerial 校验串口类型特定配置
 func (a *Asset) validateSerial() error {
 	cfg, err := a.GetSerialConfig()
@@ -827,6 +912,12 @@ func (a *Asset) CanConnect() bool {
 			return false
 		}
 		return cfg.PortPath != ""
+	case AssetTypeEtcd:
+		cfg, err := a.GetEtcdConfig()
+		if err != nil {
+			return false
+		}
+		return cfg.Host != "" && cfg.Port > 0
 	}
 	return false
 }

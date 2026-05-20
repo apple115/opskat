@@ -193,6 +193,26 @@ func (r *Resolver) ResolveRedisPassword(ctx context.Context, cfg *asset_entity.R
 	return decrypted, nil
 }
 
+// ResolveEtcdPassword 解密 EtcdConfig 中的密码
+// 优先使用统一凭证，向后兼容内联密码
+func (r *Resolver) ResolveEtcdPassword(ctx context.Context, cfg *asset_entity.EtcdConfig) (string, error) {
+	if cfg.CredentialID > 0 {
+		password, err := credential_mgr_svc.GetDecryptedPassword(ctx, cfg.CredentialID)
+		if err != nil {
+			return "", fmt.Errorf("获取 etcd 凭证失败: %w", err)
+		}
+		return password, nil
+	}
+	if cfg.Password == "" {
+		return "", nil
+	}
+	decrypted, err := credential_svc.Default().Decrypt(cfg.Password)
+	if err != nil {
+		return "", fmt.Errorf("解密 etcd 密码失败: %w", err)
+	}
+	return decrypted, nil
+}
+
 // ResolveMongoDBPassword 解密 MongoDBConfig 中的密码
 // 优先使用统一凭证，向后兼容内联密码
 func (r *Resolver) ResolveMongoDBPassword(ctx context.Context, cfg *asset_entity.MongoDBConfig) (string, error) {

@@ -247,6 +247,7 @@
     "typeMongoDB": "MongoDB",
     "typeKafka": "Kafka",
     "typeK8s": "K8S 集群",
+    "typeEtcd": "etcd",
     "typeSerial": "串口",
     "driver": "数据库类型",
     "driverMySQL": "MySQL",
@@ -307,6 +308,11 @@
     "redisPolicyDenyList": "拒绝列表（始终拒绝执行）",
     "redisPolicyHint": "未列出的命令将请求用户确认后执行；规则支持使用 * 通配，范围过宽（如 *）可能放行高风险命令或误拒大量命令，请谨慎配置。",
     "redisPolicyPlaceholder": "输入命令规则后按回车，支持逗号分隔批量添加",
+    "etcdPolicy": "etcd 命令权限",
+    "etcdPolicyAllowList": "允许列表（直接执行，无需确认）",
+    "etcdPolicyDenyList": "拒绝列表（始终拒绝执行）",
+    "etcdPolicyHint": "未列出的命令将请求用户确认后执行；规则支持使用 * 通配，范围过宽（如 *）可能放行高风险命令或误拒大量命令，请谨慎配置。",
+    "etcdPolicyPlaceholder": "输入命令规则后按回车，支持逗号分隔批量添加",
     "mongoPolicy": "MongoDB 操作权限",
     "mongoPolicyAllowTypes": "允许的操作类型",
     "mongoPolicyDenyTypes": "拒绝的操作类型",
@@ -421,6 +427,7 @@
     "policyTestPlaceholder": "输入命令测试...",
     "policyTestSqlPlaceholder": "输入 SQL 测试，如: SELECT * FROM users",
     "policyTestRedisPlaceholder": "输入 Redis 命令测试，如: GET user:1",
+    "policyTestEtcdPlaceholder": "输入 etcd 命令测试，如: get /config/key",
     "policyTestMongoPlaceholder": "输入 MongoDB 操作测试，如: find",
     "policyTestKafkaPlaceholder": "输入 Kafka 操作测试，如: topic.read orders",
     "policyTestAllow": "允许",
@@ -448,24 +455,81 @@
       "deleteConfirmTitle": "确认删除权限组",
       "deleteConfirm": "确定删除权限组 \"{{name}}\"？此操作不可撤销。",
       "builtin": {
-        "linux-readonly": { "name": "Linux 常用只读", "desc": "常用 Linux 只读命令" },
-        "k8s-readonly": { "name": "Kubernetes 只读", "desc": "Kubernetes 只读操作命令" },
-        "k8s-dangerous-deny": { "name": "Kubernetes 高危拒绝", "desc": "拒绝执行高危 Kubernetes 命令" },
-        "docker-readonly": { "name": "Docker 只读", "desc": "Docker 只读操作命令" },
-        "dangerous-deny": { "name": "高危命令拒绝", "desc": "拒绝执行高危系统命令" },
-        "sql-readonly": { "name": "SQL 只读", "desc": "只允许查询类 SQL 语句" },
-        "sql-dangerous-deny": { "name": "SQL 高危拒绝", "desc": "拒绝高危 SQL 操作" },
-        "redis-readonly": { "name": "Redis 只读", "desc": "只允许 Redis 只读命令" },
-        "redis-dangerous-deny": { "name": "Redis 高危拒绝", "desc": "拒绝 Redis 高危命令" },
-        "kafka-metadata-readonly": { "name": "Kafka 元数据只读", "desc": "允许读取集群、Broker、Topic 和消费组元数据" },
-        "kafka-message-read": { "name": "Kafka 消息读取", "desc": "允许读取消息内容" },
-        "kafka-schema-readonly": { "name": "Schema Registry 只读", "desc": "允许读取 Schema Registry 元数据和 Schema" },
-        "kafka-connect-readonly": { "name": "Kafka Connect 只读", "desc": "允许读取连接器状态和配置" },
-        "kafka-operator": { "name": "Kafka 运维操作", "desc": "允许 Topic、分区和消费组偏移等管理操作" },
-        "kafka-security-admin": { "name": "Kafka 安全管理", "desc": "允许管理 Kafka ACL" },
-        "kafka-dangerous-deny": { "name": "Kafka 高危拒绝", "desc": "拒绝删除、截断和安全变更等高危操作" }
+        "linux-readonly": {
+          "name": "Linux 常用只读",
+          "desc": "常用 Linux 只读命令"
+        },
+        "k8s-readonly": {
+          "name": "Kubernetes 只读",
+          "desc": "Kubernetes 只读操作命令"
+        },
+        "k8s-dangerous-deny": {
+          "name": "Kubernetes 高危拒绝",
+          "desc": "拒绝执行高危 Kubernetes 命令"
+        },
+        "docker-readonly": {
+          "name": "Docker 只读",
+          "desc": "Docker 只读操作命令"
+        },
+        "dangerous-deny": {
+          "name": "高危命令拒绝",
+          "desc": "拒绝执行高危系统命令"
+        },
+        "sql-readonly": {
+          "name": "SQL 只读",
+          "desc": "只允许查询类 SQL 语句"
+        },
+        "sql-dangerous-deny": {
+          "name": "SQL 高危拒绝",
+          "desc": "拒绝高危 SQL 操作"
+        },
+        "redis-readonly": {
+          "name": "Redis 只读",
+          "desc": "只允许 Redis 只读命令"
+        },
+        "redis-dangerous-deny": {
+          "name": "Redis 高危拒绝",
+          "desc": "拒绝 Redis 高危命令"
+        },
+        "kafka-metadata-readonly": {
+          "name": "Kafka 元数据只读",
+          "desc": "允许读取集群、Broker、Topic 和消费组元数据"
+        },
+        "kafka-message-read": {
+          "name": "Kafka 消息读取",
+          "desc": "允许读取消息内容"
+        },
+        "kafka-schema-readonly": {
+          "name": "Schema Registry 只读",
+          "desc": "允许读取 Schema Registry 元数据和 Schema"
+        },
+        "kafka-connect-readonly": {
+          "name": "Kafka Connect 只读",
+          "desc": "允许读取连接器状态和配置"
+        },
+        "kafka-operator": {
+          "name": "Kafka 运维操作",
+          "desc": "允许 Topic、分区和消费组偏移等管理操作"
+        },
+        "kafka-security-admin": {
+          "name": "Kafka 安全管理",
+          "desc": "允许管理 Kafka ACL"
+        },
+        "kafka-dangerous-deny": {
+          "name": "Kafka 高危拒绝",
+          "desc": "拒绝删除、截断和安全变更等高危操作"
+        }
       }
-    }
+    },
+    "usernameOptional": "用户名（可选）",
+    "selectSshTunnel": "选择 SSH 隧道",
+    "useTLS": "使用 TLS",
+    "commandTimeout": "命令超时（秒）",
+    "tlsSkipVerify": "跳过证书校验",
+    "tlsServerName": "TLS Server Name",
+    "tlsCAFile": "CA 证书路径",
+    "tlsCertFile": "客户端证书路径",
+    "tlsKeyFile": "客户端私钥路径"
   },
   "sshKey": {
     "title": "SSH 密钥",
@@ -1137,7 +1201,6 @@
     "batchDescription": "以下 {{count}} 条操作需要您的批准",
     "alwaysAllow": "始终允许",
     "approve": "批准",
-    "allow": "允许",
     "scopeAll": "所有资产"
   },
   "audit": {
@@ -1924,7 +1987,16 @@
     "expandFolder": "展开目录",
     "collapseFolder": "收起目录",
     "loadData": "加载数据",
-    "tableRestoredHint": "{{table}} 已恢复，点击按钮或按 {{shortcut}} 加载数据"
+    "tableRestoredHint": "{{table}} 已恢复，点击按钮或按 {{shortcut}} 加载数据",
+    "etcdPrefix": "键前缀...",
+    "noKeys": "暂无密钥",
+    "showingNKeys": "显示 {{count}} 个密钥",
+    "keys": "密钥",
+    "cluster": "集群",
+    "members": "成员",
+    "noMembers": "暂无成员",
+    "saveSuccess": "保存成功",
+    "deleteSuccess": "删除成功"
   },
   "systemStatus": {
     "title": "系统状态",
@@ -2050,5 +2122,7 @@
       "empty": "还没有 prompt 片段",
       "openManager": "到代码片段页创建"
     }
-  }
+  },
+  "saveSuccess": "保存成功",
+  "deleteSuccess": "删除成功"
 }

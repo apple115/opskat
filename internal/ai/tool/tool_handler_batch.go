@@ -241,6 +241,8 @@ func batchApprovalAssetType(batchType string) string {
 		return asset_entity.AssetTypeDatabase
 	case "redis":
 		return asset_entity.AssetTypeRedis
+	case "etcd":
+		return asset_entity.AssetTypeEtcd
 	default:
 		return asset_entity.AssetTypeSSH
 	}

@@ -51,6 +51,28 @@ func (p *RedisPolicy) IsEmpty() bool {
 	return len(p.AllowList) == 0 && len(p.DenyList) == 0 && len(p.Groups) == 0
 }
 
+// EtcdPolicy etcd 权限策略
+type EtcdPolicy struct {
+	AllowList []string `json:"allow_list"`       // 允许的命令模式
+	DenyList  []string `json:"deny_list"`        // 拒绝的命令模式
+	Groups    []string `json:"groups,omitempty"` // 引用的权限组 ID
+}
+
+// IsEmpty 检查策略是否为空
+func (p *EtcdPolicy) IsEmpty() bool {
+	return len(p.AllowList) == 0 && len(p.DenyList) == 0 && len(p.Groups) == 0
+}
+
+// DefaultEtcdPolicy 返回默认 etcd 权限策略
+func DefaultEtcdPolicy() *EtcdPolicy {
+	return &EtcdPolicy{
+		Groups: []string{
+			"builtin:etcd-readonly",
+			"builtin:etcd-dangerous-deny",
+		},
+	}
+}
+
 // MongoPolicy MongoDB 权限策略
 type MongoPolicy struct {
 	AllowTypes []string `json:"allow_types,omitempty"` // 允许的操作类型: find, findOne, aggregate, ...
@@ -111,6 +133,7 @@ type Holder interface {
 	GetCommandPolicy() (*CommandPolicy, error)
 	GetQueryPolicy() (*QueryPolicy, error)
 	GetRedisPolicy() (*RedisPolicy, error)
+	GetEtcdPolicy() (*EtcdPolicy, error)
 	GetMongoPolicy() (*MongoPolicy, error)
 	GetKafkaPolicy() (*KafkaPolicy, error)
 	GetK8sPolicy() (*K8sPolicy, error)

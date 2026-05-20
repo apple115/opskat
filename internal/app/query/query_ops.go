@@ -14,11 +14,13 @@ import (
 	"github.com/opskat/opskat/internal/model/entity/asset_entity"
 	"github.com/opskat/opskat/internal/service/asset_svc"
 	"github.com/opskat/opskat/internal/service/credential_resolver"
+	"github.com/opskat/opskat/internal/service/etcd_svc"
 	"github.com/opskat/opskat/internal/service/query_svc"
 	"github.com/opskat/opskat/internal/service/testreg"
 
 	"github.com/cago-frame/cago/pkg/logger"
 	"github.com/redis/go-redis/v9"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 )
 
@@ -41,6 +43,18 @@ func (q *Query) getOrDialPanelRedis(ctx context.Context, asset *asset_entity.Ass
 	key := fmt.Sprintf("%d:%d", asset.ID, cfg.Database)
 	client, _, err := q.redisPanelCache.GetOrDial(key, func() (*redis.Client, io.Closer, error) {
 		return connpool.DialRedis(ctx, asset, cfg, password, q.pool)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return client, nil
+}
+
+// getOrDialPanelEtcd 从面板缓存取 etcd 客户端。
+func (q *Query) getOrDialPanelEtcd(ctx context.Context, asset *asset_entity.Asset, cfg *asset_entity.EtcdConfig, password string) (*clientv3.Client, error) {
+	key := fmt.Sprintf("%d", asset.ID)
+	client, _, err := q.etcdPanelCache.GetOrDial(key, func() (*clientv3.Client, io.Closer, error) {
+		return connpool.DialEtcd(ctx, asset, cfg, password, q.pool)
 	})
 	if err != nil {
 		return nil, err
@@ -320,6 +334,74 @@ func (q *Query) ExecuteRedis(assetID int64, command string, db int) (string, err
 	}
 
 	return helper.ExecuteRedis(ctx, client, command)
+}
+
+// TestEtcdConnection 测试 etcd 连接
+func (q *Query) TestEtcdConnection(testID string, configJSON string, plainPassword string) error {
+	var cfg asset_entity.EtcdConfig
+	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
+		return fmt.Errorf("配置解析失败: %w", err)
+	}
+
+	parent, parentCancel := context.WithTimeout(i18n.Ctx(q.ctx, q.lang.Lang()), 10*time.Second)
+	defer parentCancel()
+	ctx, release := testreg.Begin(parent, testID)
+	defer release()
+
+	password := plainPassword
+	if password == "" {
+		var err error
+		password, err = credential_resolver.Default().ResolveEtcdPassword(ctx, &cfg)
+		if err != nil {
+			return fmt.Errorf("连接失败: %w", err)
+		}
+	}
+
+	testAsset := &asset_entity.Asset{}
+	client, tunnel, err := connpool.DialEtcd(ctx, testAsset, &cfg, password, q.pool)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := client.Close(); err != nil {
+			logger.Default().Warn("close etcd client failed", zap.Error(err))
+		}
+		if tunnel != nil {
+			if err := tunnel.Close(); err != nil {
+				logger.Default().Warn("close tunnel failed", zap.Error(err))
+			}
+		}
+	}()
+	return nil
+}
+
+// ExecuteEtcd 在指定 etcd 资产上执行命令
+func (q *Query) ExecuteEtcd(assetID int64, command string) (string, error) {
+	asset, err := asset_svc.Asset().Get(i18n.Ctx(q.ctx, q.lang.Lang()), assetID)
+	if err != nil {
+		return "", fmt.Errorf("资产不存在: %w", err)
+	}
+	if !asset.IsEtcd() {
+		return "", fmt.Errorf("资产不是 etcd 类型")
+	}
+	cfg, err := asset.GetEtcdConfig()
+	if err != nil {
+		return "", fmt.Errorf("获取 etcd 配置失败: %w", err)
+	}
+	password, err := credential_resolver.Default().ResolveEtcdPassword(i18n.Ctx(q.ctx, q.lang.Lang()), cfg)
+	if err != nil {
+		return "", fmt.Errorf("解析凭据失败: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(i18n.Ctx(q.ctx, q.lang.Lang()), 30*time.Second)
+	defer cancel()
+
+	client, err := q.getOrDialPanelEtcd(ctx, asset, cfg, password)
+	if err != nil {
+		return "", fmt.Errorf("连接 etcd 失败: %w", err)
+	}
+
+	return etcd_svc.ExecuteEtcd(ctx, client, command)
 }
 
 // TestMongoDBConnection 测试 MongoDB 连接

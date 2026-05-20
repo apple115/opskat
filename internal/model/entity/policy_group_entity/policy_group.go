@@ -15,6 +15,7 @@ const (
 	PolicyTypeCommand = "command"
 	PolicyTypeQuery   = "query"
 	PolicyTypeRedis   = "redis"
+	PolicyTypeEtcd    = "etcd"
 	PolicyTypeMongo   = "mongo"
 	PolicyTypeKafka   = "kafka"
 )
@@ -45,7 +46,7 @@ func (pg *PolicyGroup) Validate() error {
 		return errors.New("权限组名称不能为空")
 	}
 	switch pg.PolicyType {
-	case PolicyTypeCommand, PolicyTypeQuery, PolicyTypeRedis, PolicyTypeMongo, PolicyTypeKafka:
+	case PolicyTypeCommand, PolicyTypeQuery, PolicyTypeRedis, PolicyTypeEtcd, PolicyTypeMongo, PolicyTypeKafka:
 	default:
 		if !hasExtensionPolicyType(pg.PolicyType) {
 			return errors.New("无效的策略类型")
@@ -247,6 +248,33 @@ func BuiltinGroups() []*PolicyGroup {
 					"SLAVEOF *", "REPLICAOF *",
 					"ACL DELUSER *", "ACL SETUSER *",
 					"SCRIPT FLUSH", "CLUSTER RESET *",
+				},
+			}),
+		},
+		// etcd 类型
+		{
+			BuiltinID:   "builtin:etcd-readonly",
+			Name:        "Etcd Read-Only",
+			Description: "Allow etcd read-only commands",
+			PolicyType:  PolicyTypeEtcd,
+			Policy: mustMarshal(&policy.EtcdPolicy{
+				AllowList: []string{
+					"GET", "RANGE",
+					"STATUS", "MEMBER LIST",
+				},
+			}),
+		},
+		{
+			BuiltinID:   "builtin:etcd-dangerous-deny",
+			Name:        "Etcd Dangerous Deny",
+			Description: "Deny dangerous etcd commands",
+			PolicyType:  PolicyTypeEtcd,
+			Policy: mustMarshal(&policy.EtcdPolicy{
+				DenyList: []string{
+					"DELETE --PREFIX",
+					"COMPACTION", "DEFRAG",
+					"ALARM", "AUTH DISABLE",
+					"MEMBER REMOVE", "MEMBER ADD",
 				},
 			}),
 		},

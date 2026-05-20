@@ -262,6 +262,8 @@ func (c *CommandPolicyChecker) HandleConfirm(ctx context.Context, assetID int64,
 		approvalType = "sql"
 	case asset_entity.AssetTypeRedis:
 		approvalType = "redis"
+	case asset_entity.AssetTypeEtcd:
+		approvalType = "etcd"
 	case asset_entity.AssetTypeMongoDB:
 		approvalType = "mongo"
 	case asset_entity.AssetTypeKafka:
@@ -391,6 +393,32 @@ func collectQueryPolicies(ctx context.Context, asset *asset_entity.Asset) *asset
 		}
 		merged.DenyTypes = policy.AppendUnique(merged.DenyTypes, p.DenyTypes...)
 		merged.DenyFlags = policy.AppendUnique(merged.DenyFlags, p.DenyFlags...)
+	}
+	return merged
+}
+
+// collectEtcdPolicies 收集资产 + 组链的 etcd 权限策略并合并
+func collectEtcdPolicies(ctx context.Context, asset *asset_entity.Asset) *asset_entity.EtcdPolicy {
+	holders := policyHoldersForAsset(ctx, asset)
+	policies := collectPoliciesFromChain(holders, func(h policyent.Holder) (*asset_entity.EtcdPolicy, error) {
+		return h.GetEtcdPolicy()
+	})
+	if len(policies) == 0 {
+		return nil
+	}
+	for _, p := range policies {
+		if len(p.Groups) > 0 {
+			grpAllow, grpDeny := policy.ResolveEtcdGroups(ctx, p.Groups)
+			p.AllowList = append(p.AllowList, grpAllow...)
+			p.DenyList = append(p.DenyList, grpDeny...)
+		}
+	}
+	merged := &asset_entity.EtcdPolicy{}
+	for _, p := range policies {
+		if len(merged.AllowList) == 0 && len(p.AllowList) > 0 {
+			merged.AllowList = p.AllowList
+		}
+		merged.DenyList = policy.AppendUnique(merged.DenyList, p.DenyList...)
 	}
 	return merged
 }

@@ -13,7 +13,7 @@ export interface QueryTab {
   assetId: number;
   assetName: string;
   assetIcon: string;
-  assetType: "database" | "redis" | "mongodb" | "kafka" | "k8s";
+  assetType: "database" | "redis" | "etcd" | "mongodb" | "kafka" | "k8s";
   driver?: string; // "mysql" | "postgresql"
   defaultDatabase?: string;
   redisDatabase?: number;
@@ -359,7 +359,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         assetId: asset.ID,
         assetName: asset.Name,
         assetIcon: asset.Icon || "",
-        assetType: asset.Type as "database" | "redis" | "mongodb" | "kafka" | "k8s",
+        assetType: asset.Type as "database" | "redis" | "etcd" | "mongodb" | "kafka" | "k8s",
         driver,
         defaultDatabase,
         redisDatabase,
@@ -391,6 +391,8 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       set((s) => ({
         redisStates: { ...s.redisStates, [tabId]: defaultRedisState({ database: redisDatabase }) },
       }));
+    } else if (asset.Type === "etcd") {
+      // EtcdPanel manages its own local state
     }
   },
 

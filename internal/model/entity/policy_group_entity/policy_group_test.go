@@ -120,8 +120,8 @@ func TestBuiltinGroups(t *testing.T) {
 	convey.Convey("BuiltinGroups内置权限组列表", t, func() {
 		groups := BuiltinGroups()
 
-		convey.Convey("共返回19个内置组", func() {
-			assert.Len(t, groups, 19)
+		convey.Convey("共返回21个内置组", func() {
+			assert.Len(t, groups, 21)
 		})
 
 		convey.Convey("所有内置组ID均以builtin:开头", func() {
@@ -154,6 +154,16 @@ func TestBuiltinGroups(t *testing.T) {
 			var count int
 			for _, g := range groups {
 				if g.PolicyType == PolicyTypeRedis {
+					count++
+				}
+			}
+			assert.Equal(t, 2, count)
+		})
+
+		convey.Convey("etcd类型内置组有2个", func() {
+			var count int
+			for _, g := range groups {
+				if g.PolicyType == PolicyTypeEtcd {
 					count++
 				}
 			}

@@ -18,6 +18,7 @@ export function getBuiltinTypes(): AssetTypeDefinition[] {
 import "./ssh";
 import "./database";
 import "./redis";
+import "./etcd";
 import "./mongodb";
 import "./kafka";
 import "./k8s";

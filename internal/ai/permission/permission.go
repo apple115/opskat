@@ -40,6 +40,8 @@ func CheckPermission(ctx context.Context, assetType string, assetID int64, comma
 		return checkDatabasePermission(ctx, assetID, command)
 	case asset_entity.AssetTypeRedis:
 		return checkRedisPermission(ctx, assetID, command)
+	case asset_entity.AssetTypeEtcd:
+		return checkEtcdPermission(ctx, assetID, command)
 	case asset_entity.AssetTypeMongoDB:
 		return checkMongoDBPermission(ctx, assetID, command)
 	case asset_entity.AssetTypeKafka:
@@ -196,6 +198,42 @@ func checkRedisPermission(ctx context.Context, assetID int64, command string) ai
 
 	// aictx.NeedConfirm：收集允许的 Redis 命令作为提示
 	merged := policy.EffectiveRedisPolicy(ctx, mergedPolicy)
+	if len(merged.AllowList) > 0 {
+		result.HintRules = merged.AllowList
+	}
+	return result
+}
+
+// --- etcd ---
+
+func checkEtcdPermission(ctx context.Context, assetID int64, command string) aictx.CheckResult {
+	// 组通用策略（etcd 单语句，单元素切片）
+	groupResult := policy.CheckGroupGenericPolicy(ctx, assetID, []string{command}, policy.MatchEtcdRule)
+	if groupResult.Decision == aictx.Deny {
+		return groupResult
+	}
+
+	// etcd 策略
+	asset := resolveAssetForPolicy(ctx, assetID)
+	mergedPolicy := collectEtcdPolicies(ctx, asset)
+	result := policy.CheckEtcdPolicy(ctx, mergedPolicy, command)
+
+	// 组通用 allow 优先于类型专用的 aictx.NeedConfirm
+	if result.Decision == aictx.NeedConfirm && groupResult.Decision == aictx.Allow {
+		return groupResult
+	}
+
+	if result.Decision != aictx.NeedConfirm {
+		return result
+	}
+
+	// DB Grant 匹配
+	if grantResult := matchGrantForAsset(ctx, assetID, command); grantResult != nil {
+		return *grantResult
+	}
+
+	// aictx.NeedConfirm：收集允许的 etcd 命令作为提示
+	merged := policy.EffectiveEtcdPolicy(ctx, mergedPolicy)
 	if len(merged.AllowList) > 0 {
 		result.HintRules = merged.AllowList
 	}

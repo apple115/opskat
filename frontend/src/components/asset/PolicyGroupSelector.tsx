@@ -18,6 +18,7 @@ const policyTypeMap: Record<string, string> = {
   k8s: "command",
   database: "query",
   redis: "redis",
+  etcd: "etcd",
   mongodb: "mongo",
   mongo: "mongo",
   kafka: "kafka",

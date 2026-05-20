@@ -46,6 +46,7 @@ func (e *Extension) GetAvailableAssetTypes() []AssetTypeInfo {
 		{Type: asset_entity.AssetTypeSSH, DisplayName: "SSH"},
 		{Type: asset_entity.AssetTypeDatabase, DisplayName: "Database"},
 		{Type: asset_entity.AssetTypeRedis, DisplayName: "Redis"},
+		{Type: asset_entity.AssetTypeEtcd, DisplayName: "Etcd", SSHTunnel: true},
 		{Type: asset_entity.AssetTypeMongoDB, DisplayName: "MongoDB", SSHTunnel: true},
 		{Type: asset_entity.AssetTypeKafka, DisplayName: "Kafka", SSHTunnel: true},
 		{Type: asset_entity.AssetTypeK8s, DisplayName: "K8S"},
