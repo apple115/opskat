@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Input, ScrollArea, Separator, Tabs, TabsContent, TabsList, TabsTrigger } from "@opskat/ui";
-import { Search, RefreshCw, Trash2, Save, Users } from "lucide-react";
+import { Search, RefreshCw, Trash2, Save, Users, Eye, EyeOff, Plus } from "lucide-react";
 import { toast } from "sonner";
+import { EventsOn, EventsOff } from "../../../wailsjs/runtime/runtime";
 import {
   EtcdRangeKeys,
   EtcdGetKey,
@@ -10,7 +11,10 @@ import {
   EtcdDeleteKeys,
   EtcdGetStatus,
   EtcdGetMembers,
+  EtcdStartWatch,
+  EtcdStopWatch,
 } from "../../../wailsjs/go/etcd/Etcd";
+import { EtcdCreateKeyDialog } from "./EtcdCreateKeyDialog";
 
 interface EtcdPanelProps {
   tabId: string;
@@ -56,6 +60,16 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
   const [status, setStatus] = useState<EtcdStatusData | null>(null);
   const [members, setMembers] = useState<EtcdMember[]>([]);
   const [activeTab, setActiveTab] = useState("keys");
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+
+  // Watch state
+  const [watchPrefix, setWatchPrefix] = useState("");
+  const [isWatching, setIsWatching] = useState(false);
+  const [watchLogs, setWatchLogs] = useState<
+    Array<{ type: string; key: string; value?: string; prevValue?: string; revision: number; time: string }>
+  >([]);
+  const watchIdRef = useRef<string>("");
+  const logsEndRef = useRef<HTMLDivElement>(null);
 
   const fetchKeys = useCallback(async () => {
     if (!assetId) return;
@@ -119,10 +133,91 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
     }
   }, [activeTab, fetchStatus, fetchMembers]);
 
+  // Watch event listener
+  useEffect(() => {
+    if (!isWatching || !assetId) return;
+    const eventName = `etcd:watch:${assetId}`;
+    const cancel = EventsOn(
+      eventName,
+      (event: {
+        type: string;
+        key: string;
+        value?: string;
+        prevValue?: string;
+        revision: number;
+        timestamp: number;
+      }) => {
+        setWatchLogs((prev) => [
+          ...prev,
+          {
+            type: event.type,
+            key: event.key,
+            value: event.value,
+            prevValue: event.prevValue,
+            revision: event.revision,
+            time: new Date(event.timestamp).toLocaleTimeString(),
+          },
+        ]);
+      }
+    );
+    return () => {
+      cancel();
+      EventsOff(eventName);
+    };
+  }, [isWatching, assetId]);
+
+  // Auto-scroll watch logs
+  useEffect(() => {
+    if (logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [watchLogs]);
+
+  const startWatch = async () => {
+    if (!assetId) return;
+    try {
+      const watchID = await EtcdStartWatch(assetId, watchPrefix || "");
+      watchIdRef.current = watchID;
+      setIsWatching(true);
+      toast.success(t("query.watchStarted"));
+    } catch (err) {
+      toast.error(String(err));
+    }
+  };
+
+  const stopWatch = () => {
+    if (watchIdRef.current) {
+      EtcdStopWatch(watchIdRef.current);
+      watchIdRef.current = "";
+    }
+    setIsWatching(false);
+  };
+
+  const clearWatchLogs = () => {
+    setWatchLogs([]);
+  };
+
   const handleSelectKey = (kv: EtcdKV) => {
     setSelectedKey(kv.key);
     fetchDetail(kv.key);
   };
+
+  const handleCreatedKey = async (createdKey: string) => {
+    setPrefix("");
+    await fetchKeys();
+    setSelectedKey(createdKey);
+    await fetchDetail(createdKey);
+    toast.success(t("query.createEtcdKeySuccess"));
+  };
+
+  useEffect(() => {
+    return () => {
+      if (watchIdRef.current) {
+        EtcdStopWatch(watchIdRef.current);
+        watchIdRef.current = "";
+      }
+    };
+  }, []);
 
   const handlePut = async () => {
     if (!assetId || !selectedKey) return;
@@ -165,6 +260,14 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
           </Button>
           <Button size="icon" variant="ghost" onClick={fetchKeys} disabled={loading}>
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => setCreateDialogOpen(true)}
+            title={t("query.createEtcdKey")}
+          >
+            <Plus className="h-4 w-4" />
           </Button>
         </div>
         <Separator />
@@ -210,6 +313,7 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
           <div className="border-b px-4">
             <TabsList>
               <TabsTrigger value="keys">{t("query.keys")}</TabsTrigger>
+              <TabsTrigger value="watch">{t("query.watch")}</TabsTrigger>
               <TabsTrigger value="cluster">{t("query.cluster")}</TabsTrigger>
             </TabsList>
           </div>
@@ -222,11 +326,11 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
                   <div className="flex gap-2">
                     <Button size="sm" onClick={handlePut}>
                       <Save className="mr-1 h-4 w-4" />
-                      {t("common.save")}
+                      {t("save")}
                     </Button>
                     <Button size="sm" variant="destructive" onClick={() => handleDelete(detail.key)}>
                       <Trash2 className="mr-1 h-4 w-4" />
-                      {t("common.delete")}
+                      {t("delete")}
                     </Button>
                   </div>
                 </div>
@@ -249,6 +353,80 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
                 {t("query.selectKey")}
               </div>
             )}
+          </TabsContent>
+
+          <TabsContent value="watch" className="flex flex-1 flex-col m-0 p-4 gap-4">
+            <div className="flex items-center gap-2">
+              <Input
+                value={watchPrefix}
+                onChange={(e) => setWatchPrefix(e.target.value)}
+                placeholder={t("query.watchPrefix")}
+                disabled={isWatching}
+                className="flex-1"
+              />
+              {!isWatching ? (
+                <Button onClick={startWatch}>
+                  <Eye className="mr-1 h-4 w-4" />
+                  {t("query.startWatch")}
+                </Button>
+              ) : (
+                <Button variant="destructive" onClick={stopWatch}>
+                  <EyeOff className="mr-1 h-4 w-4" />
+                  {t("query.stopWatch")}
+                </Button>
+              )}
+              <Button variant="outline" onClick={clearWatchLogs} disabled={watchLogs.length === 0}>
+                {t("query.clearWatchLogs")}
+              </Button>
+            </div>
+            <div className="flex-1 overflow-auto rounded-md border">
+              <table className="w-full text-sm">
+                <thead className="bg-muted sticky top-0">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium">{t("query.watchTime")}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t("query.watchType")}</th>
+                    <th className="px-3 py-2 text-left font-medium">Key</th>
+                    <th className="px-3 py-2 text-left font-medium">Value</th>
+                    <th className="px-3 py-2 text-left font-medium">Revision</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {watchLogs.map((log, idx) => (
+                    <tr key={idx} className="border-t">
+                      <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{log.time}</td>
+                      <td className="px-3 py-2">
+                        <span
+                          className={`inline-flex rounded px-1.5 py-0.5 text-xs font-medium ${
+                            log.type === "put"
+                              ? "bg-green-100 text-green-800"
+                              : log.type === "delete"
+                                ? "bg-red-100 text-red-800"
+                                : "bg-gray-100 text-gray-800"
+                          }`}
+                        >
+                          {log.type === "put"
+                            ? t("query.watchEventPut")
+                            : log.type === "delete"
+                              ? t("query.watchEventDelete")
+                              : log.type}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 font-mono text-xs truncate max-w-[200px]">{log.key}</td>
+                      <td className="px-3 py-2 font-mono text-xs truncate max-w-[200px]">{log.value || "-"}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{log.revision}</td>
+                    </tr>
+                  ))}
+                  {watchLogs.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                        {isWatching ? t("query.watchWaiting") : t("query.noWatchLogs")}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+              <div ref={logsEndRef} />
+            </div>
           </TabsContent>
 
           <TabsContent value="cluster" className="flex flex-1 flex-col m-0 p-4 gap-4">
@@ -296,6 +474,13 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
           </TabsContent>
         </Tabs>
       </div>
+
+      <EtcdCreateKeyDialog
+        open={createDialogOpen}
+        assetId={assetId}
+        onOpenChange={setCreateDialogOpen}
+        onCreated={handleCreatedKey}
+      />
     </div>
   );
 }

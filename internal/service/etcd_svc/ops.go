@@ -36,6 +36,9 @@ func rangeKeys(ctx context.Context, exec etcdExecutor, req EtcdRangeRequest) (Et
 	}
 	if rangeEnd != "" {
 		opts = append(opts, clientv3.WithRange(rangeEnd))
+	} else {
+		// 查询所有 key（从 \x00 开始到末尾）
+		opts = append(opts, clientv3.WithFromKey())
 	}
 
 	resp, err := exec.Get(ctx, key, opts...)

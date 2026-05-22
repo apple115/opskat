@@ -491,6 +491,14 @@
           "name": "Redis 高危拒绝",
           "desc": "拒绝 Redis 高危命令"
         },
+        "etcd-readonly": {
+          "name": "etcd 只读",
+          "desc": "只允许 etcd 只读命令"
+        },
+        "etcd-dangerous-deny": {
+          "name": "etcd 高危拒绝",
+          "desc": "拒绝 etcd 高危命令"
+        },
         "kafka-metadata-readonly": {
           "name": "Kafka 元数据只读",
           "desc": "允许读取集群、Broker、Topic 和消费组元数据"
@@ -529,7 +537,8 @@
     "tlsServerName": "TLS Server Name",
     "tlsCAFile": "CA 证书路径",
     "tlsCertFile": "客户端证书路径",
-    "tlsKeyFile": "客户端私钥路径"
+    "tlsKeyFile": "客户端私钥路径",
+    "connection": "连接"
   },
   "sshKey": {
     "title": "SSH 密钥",
@@ -1996,7 +2005,27 @@
     "members": "成员",
     "noMembers": "暂无成员",
     "saveSuccess": "保存成功",
-    "deleteSuccess": "删除成功"
+    "deleteSuccess": "删除成功",
+    "selectKey": "选择一个密钥查看详情",
+    "watch": "监控",
+    "startWatch": "开始监控",
+    "stopWatch": "停止监控",
+    "watchPrefix": "监控前缀（留空监听所有）",
+    "clearWatchLogs": "清空日志",
+    "watchTime": "时间",
+    "watchType": "类型",
+    "watchEventPut": "写入",
+    "watchEventDelete": "删除",
+    "noWatchLogs": "暂无监控日志",
+    "watchWaiting": "正在监听，等待事件...",
+    "watchStarted": "监控已启动",
+    "createEtcdKey": "新建 Key",
+    "createEtcdKeySubmit": "创建",
+    "createEtcdKeySuccess": "Key 创建成功",
+    "etcdKeyName": "Key",
+    "etcdKeyNamePlaceholder": "输入 etcd key，如 /config/app/name",
+    "etcdKeyValue": "Value",
+    "etcdKeyValuePlaceholder": "输入 value"
   },
   "systemStatus": {
     "title": "系统状态",
@@ -2124,5 +2153,8 @@
     }
   },
   "saveSuccess": "保存成功",
-  "deleteSuccess": "删除成功"
+  "deleteSuccess": "删除成功",
+  "save": "保存",
+  "delete": "删除",
+  "mentionAssetDeleted": "资产已删除"
 }

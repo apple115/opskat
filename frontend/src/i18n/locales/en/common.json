@@ -491,6 +491,14 @@
           "name": "Redis Dangerous Deny",
           "desc": "Deny dangerous Redis commands"
         },
+        "etcd-readonly": {
+          "name": "etcd Read-Only",
+          "desc": "Allow etcd read-only commands"
+        },
+        "etcd-dangerous-deny": {
+          "name": "etcd Dangerous Deny",
+          "desc": "Deny dangerous etcd commands"
+        },
         "kafka-metadata-readonly": {
           "name": "Kafka Metadata Read-Only",
           "desc": "Allow cluster, broker, topic, and consumer group metadata reads"
@@ -529,7 +537,8 @@
     "tlsServerName": "TLS Server Name",
     "tlsCAFile": "CA Certificate Path",
     "tlsCertFile": "Client Certificate Path",
-    "tlsKeyFile": "Client Key Path"
+    "tlsKeyFile": "Client Key Path",
+    "connection": "Connection"
   },
   "sshKey": {
     "title": "SSH Keys",
@@ -1996,7 +2005,27 @@
     "members": "Members",
     "noMembers": "No members",
     "saveSuccess": "Saved successfully",
-    "deleteSuccess": "Deleted successfully"
+    "deleteSuccess": "Deleted successfully",
+    "selectKey": "Select a key to view details",
+    "watch": "Watch",
+    "startWatch": "Start Watch",
+    "stopWatch": "Stop Watch",
+    "watchPrefix": "Watch prefix (empty = all keys)",
+    "clearWatchLogs": "Clear Logs",
+    "watchTime": "Time",
+    "watchType": "Type",
+    "watchEventPut": "PUT",
+    "watchEventDelete": "DELETE",
+    "noWatchLogs": "No watch logs",
+    "watchWaiting": "Listening, waiting for events...",
+    "watchStarted": "Watch started",
+    "createEtcdKey": "New Key",
+    "createEtcdKeySubmit": "Create",
+    "createEtcdKeySuccess": "Key created successfully",
+    "etcdKeyName": "Key",
+    "etcdKeyNamePlaceholder": "Enter etcd key, e.g. /config/app/name",
+    "etcdKeyValue": "Value",
+    "etcdKeyValuePlaceholder": "Enter value"
   },
   "systemStatus": {
     "title": "Status",
@@ -2124,5 +2153,8 @@
     }
   },
   "saveSuccess": "Saved successfully",
-  "deleteSuccess": "Deleted successfully"
+  "deleteSuccess": "Deleted successfully",
+  "save": "Save",
+  "delete": "Delete",
+  "mentionAssetDeleted": "Asset deleted"
 }

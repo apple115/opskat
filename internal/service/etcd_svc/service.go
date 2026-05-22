@@ -27,14 +27,16 @@ type etcdExecutor interface {
 }
 
 type Service struct {
-	sshPool *sshpool.Pool
-	history *CommandHistory
+	sshPool      *sshpool.Pool
+	history      *CommandHistory
+	watchManager *WatchManager
 }
 
 func New(sshPool *sshpool.Pool) *Service {
 	return &Service{
-		sshPool: sshPool,
-		history: NewCommandHistory(200),
+		sshPool:      sshPool,
+		history:      NewCommandHistory(200),
+		watchManager: NewWatchManager(),
 	}
 }
 
@@ -92,6 +94,11 @@ func (s *Service) GetMembers(ctx context.Context, assetID int64) ([]EtcdMember, 
 
 func (s *Service) CommandHistory(assetID int64, limit int) []EtcdCommandHistoryEntry {
 	return s.history.List(assetID, limit)
+}
+
+// WatchManager 返回 watch 管理器。
+func (s *Service) WatchManager() *WatchManager {
+	return s.watchManager
 }
 
 func (s *Service) withClient(ctx context.Context, assetID int64, fn func(context.Context, etcdExecutor, *clientv3.Client) error) error {
