@@ -1,7 +1,23 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Input, ScrollArea, Separator, Tabs, TabsContent, TabsList, TabsTrigger } from "@opskat/ui";
-import { Search, RefreshCw, Trash2, Save, Users, Eye, EyeOff, Plus } from "lucide-react";
+import {
+  Search,
+  RefreshCw,
+  Trash2,
+  Save,
+  Users,
+  Eye,
+  EyeOff,
+  Plus,
+  List,
+  FolderTree,
+  ChevronRight,
+  ChevronDown,
+  Folder,
+  FolderOpen,
+  Key,
+} from "lucide-react";
 import { toast } from "sonner";
 import { EventsOn, EventsOff } from "../../../wailsjs/runtime/runtime";
 import {
@@ -14,35 +30,12 @@ import {
   EtcdStartWatch,
   EtcdStopWatch,
 } from "../../../wailsjs/go/etcd/Etcd";
+import { etcd_svc } from "../../../wailsjs/go/models";
 import { EtcdCreateKeyDialog } from "./EtcdCreateKeyDialog";
+import { buildKeyTree, flattenTree, type RedisFlatTreeRow } from "@/lib/redisKeyTree";
 
 interface EtcdPanelProps {
   tabId: string;
-}
-
-interface EtcdKV {
-  key: string;
-  value: string;
-  createRevision: number;
-  modRevision: number;
-  version: number;
-  lease: number;
-}
-
-interface EtcdMember {
-  id: number;
-  name: string;
-  peerURLs: string[];
-  clientURLs: string[];
-  isLearner: boolean;
-}
-
-interface EtcdStatusData {
-  version: string;
-  dbSize: number;
-  leader: number;
-  raftIndex: number;
-  raftTerm: number;
 }
 
 const PAGE_SIZE = 100;
@@ -52,15 +45,19 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
   const assetId = parseInt(tabId.replace("query-", ""), 10) || 0;
 
   const [prefix, setPrefix] = useState("");
-  const [keys, setKeys] = useState<EtcdKV[]>([]);
+  const [keys, setKeys] = useState<etcd_svc.EtcdKeyValue[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [detail, setDetail] = useState<EtcdKV | null>(null);
+  const [detail, setDetail] = useState<etcd_svc.EtcdKeyValue | null>(null);
   const [editValue, setEditValue] = useState("");
-  const [status, setStatus] = useState<EtcdStatusData | null>(null);
-  const [members, setMembers] = useState<EtcdMember[]>([]);
+  const [status, setStatus] = useState<etcd_svc.EtcdStatus | null>(null);
+  const [members, setMembers] = useState<etcd_svc.EtcdMember[]>([]);
   const [activeTab, setActiveTab] = useState("keys");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+
+  // Tree view state
+  const [viewMode, setViewMode] = useState<"list" | "tree">("tree");
+  const [treeExpanded, setTreeExpanded] = useState<Set<string>>(new Set());
 
   // Watch state
   const [watchPrefix, setWatchPrefix] = useState("");
@@ -174,7 +171,7 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
   }, [watchLogs]);
 
   const startWatch = async () => {
-    if (!assetId) return;
+    if (!assetId || isWatching) return;
     try {
       const watchID = await EtcdStartWatch(assetId, watchPrefix || "");
       watchIdRef.current = watchID;
@@ -197,7 +194,7 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
     setWatchLogs([]);
   };
 
-  const handleSelectKey = (kv: EtcdKV) => {
+  const handleSelectKey = (kv: etcd_svc.EtcdKeyValue) => {
     setSelectedKey(kv.key);
     fetchDetail(kv.key);
   };
@@ -209,6 +206,18 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
     await fetchDetail(createdKey);
     toast.success(t("query.createEtcdKeySuccess"));
   };
+
+  const toggleTreeNode = useCallback((nodeId: string) => {
+    setTreeExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) {
+        next.delete(nodeId);
+      } else {
+        next.add(nodeId);
+      }
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -264,6 +273,14 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
           <Button
             size="icon"
             variant="ghost"
+            onClick={() => setViewMode((v) => (v === "list" ? "tree" : "list"))}
+            title={viewMode === "list" ? t("query.treeView") : t("query.listView")}
+          >
+            {viewMode === "list" ? <FolderTree className="h-4 w-4" /> : <List className="h-4 w-4" />}
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
             onClick={() => setCreateDialogOpen(true)}
             title={t("query.createEtcdKey")}
           >
@@ -273,28 +290,102 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
         <Separator />
         <ScrollArea className="flex-1">
           <div className="p-2 space-y-1">
-            {keys.map((kv) => (
-              <div
-                key={kv.key}
-                className={`flex cursor-pointer items-center justify-between rounded px-2 py-1.5 text-sm ${
-                  selectedKey === kv.key ? "bg-accent" : "hover:bg-muted"
-                }`}
-                onClick={() => handleSelectKey(kv)}
-              >
-                <span className="truncate flex-1 font-mono">{kv.key}</span>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-6 w-6 opacity-0 group-hover:opacity-100"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(kv.key);
-                  }}
-                >
-                  <Trash2 className="h-3 w-3 text-destructive" />
-                </Button>
-              </div>
-            ))}
+            {viewMode === "tree" && keys.length > 0
+              ? (() => {
+                  const tree = buildKeyTree(
+                    keys.map((k) => k.key),
+                    "/"
+                  );
+                  const rows = flattenTree(tree, treeExpanded, "/");
+                  return rows.map((row: RedisFlatTreeRow) => {
+                    const isKey = row.fullKey !== null;
+                    const isFolder = row.hasChildren;
+                    return (
+                      <div
+                        key={row.nodeId}
+                        className={`flex cursor-pointer items-center justify-between rounded px-2 py-1.5 text-sm ${
+                          isKey && selectedKey === row.fullKey ? "bg-accent text-accent-foreground" : "hover:bg-muted"
+                        }`}
+                        style={{ paddingLeft: `${row.depth * 16 + 8}px` }}
+                        onClick={() => {
+                          if (isKey) {
+                            const kv = keys.find((k) => k.key === row.fullKey);
+                            if (kv) handleSelectKey(kv);
+                          } else if (isFolder) {
+                            toggleTreeNode(row.nodeId);
+                          }
+                        }}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          {isFolder ? (
+                            <button
+                              type="button"
+                              className="flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-accent"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleTreeNode(row.nodeId);
+                              }}
+                            >
+                              {row.isExpanded ? (
+                                <ChevronDown className="size-3 text-muted-foreground" />
+                              ) : (
+                                <ChevronRight className="size-3 text-muted-foreground" />
+                              )}
+                            </button>
+                          ) : (
+                            <span className="size-4 shrink-0" />
+                          )}
+                          {isKey ? (
+                            <Key className="size-3 shrink-0 text-muted-foreground" />
+                          ) : row.isExpanded ? (
+                            <FolderOpen className="size-3 shrink-0 text-muted-foreground" />
+                          ) : (
+                            <Folder className="size-3 shrink-0 text-muted-foreground" />
+                          )}
+                          <span className="truncate font-mono">{row.name}</span>
+                          {isFolder && (
+                            <span className="ml-auto shrink-0 text-muted-foreground text-[10px]">{row.keyCount}</span>
+                          )}
+                        </div>
+                        {isKey && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6 opacity-0 group-hover:opacity-100 shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(row.fullKey!);
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3 text-destructive" />
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  });
+                })()
+              : keys.map((kv) => (
+                  <div
+                    key={kv.key}
+                    className={`flex cursor-pointer items-center justify-between rounded px-2 py-1.5 text-sm group ${
+                      selectedKey === kv.key ? "bg-accent" : "hover:bg-muted"
+                    }`}
+                    onClick={() => handleSelectKey(kv)}
+                  >
+                    <span className="truncate flex-1 font-mono">{kv.key}</span>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6 opacity-0 group-hover:opacity-100"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(kv.key);
+                      }}
+                    >
+                      <Trash2 className="h-3 w-3 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
             {keys.length === 0 && !loading && (
               <div className="p-4 text-center text-sm text-muted-foreground">{t("query.noKeys")}</div>
             )}

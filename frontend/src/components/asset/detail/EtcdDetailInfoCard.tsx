@@ -16,21 +16,17 @@ export function EtcdDetailInfoCard({ asset, sshTunnelName }: DetailInfoCardProps
 
   const cfg = parseDetailConfig<EtcdConfig>(asset.Config);
   if (!cfg) return null;
+  const tunnelName = sshTunnelName(cfg.ssh_asset_id);
 
   return (
-    <>
-      <DetailSection title={t("asset.connection")}>
-        <DetailGrid>
-          <InfoItem label={t("asset.host")} value={cfg.host} />
-          <InfoItem label={t("asset.port")} value={String(cfg.port || 2379)} />
-          <InfoItem label={t("asset.username")} value={cfg.username || "-"} />
-          {cfg.tls && <InfoItem label={t("asset.tls")} value={"✓"} />}
-        </DetailGrid>
-      </DetailSection>
-      {(() => {
-        const tunnelName = sshTunnelName(cfg.ssh_asset_id);
-        return tunnelName ? <TunnelInfo label={t("asset.sshTunnel")} name={tunnelName} /> : null;
-      })()}
-    </>
+    <DetailSection title={t("asset.connection")}>
+      <DetailGrid>
+        <InfoItem label={t("asset.host")} value={cfg.host} />
+        <InfoItem label={t("asset.port")} value={String(cfg.port || 2379)} />
+        <InfoItem label={t("asset.username")} value={cfg.username || "-"} />
+        {cfg.tls && <InfoItem label={t("asset.tls")} value={"✓"} />}
+      </DetailGrid>
+      {tunnelName && <TunnelInfo label={t("asset.sshTunnel")} name={tunnelName} />}
+    </DetailSection>
   );
 }

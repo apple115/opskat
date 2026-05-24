@@ -88,9 +88,8 @@ func (m *WatchManager) runWatch(ctx context.Context, session *WatchSession, clie
 	defer close(session.done)
 
 	var opts []clientv3.OpOption
-	if prefix != "" {
-		opts = append(opts, clientv3.WithPrefix())
-	}
+	// 空 prefix + WithPrefix = 监听所有 key；非空 prefix = 监听该前缀下所有 key
+	opts = append(opts, clientv3.WithPrefix())
 	// 获取 prevValue
 	opts = append(opts, clientv3.WithPrevKV())
 
