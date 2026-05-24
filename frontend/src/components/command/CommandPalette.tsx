@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Server, MessageSquare } from "lucide-react";
-import { Input, cn } from "@opskat/ui";
+import { Input, ScrollArea, cn } from "@opskat/ui";
 import { getIconComponent, getIconColor } from "@/components/asset/IconPicker";
 import { filterAssets } from "@/lib/assetSearch";
 import { highlightMatch, type HighlightSegment } from "@/lib/highlightMatch";
@@ -311,7 +311,7 @@ export function CommandPalette({ open, onClose, onConnectAsset }: CommandPalette
       </div>
 
       {/* Results list */}
-      <div className="max-h-96 overflow-y-auto overflow-x-hidden no-scrollbar">
+      <ScrollArea className="[&>[data-slot=scroll-area-viewport]]:max-h-96">
         <div ref={listRef} className="py-1">
           {emptyKey ? (
             <p className="px-4 py-8 text-center text-sm text-muted-foreground">{t(emptyKey)}</p>
@@ -389,7 +389,7 @@ export function CommandPalette({ open, onClose, onConnectAsset }: CommandPalette
             </div>
           )}
         </div>
-      </div>
+      </ScrollArea>
 
       {/* Footer */}
       <div className="flex items-center gap-3 border-t px-4 py-2 text-xs text-muted-foreground">

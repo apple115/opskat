@@ -43,7 +43,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const termRef = useRef<XTerminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
-  const activeRef = useRef(active);
   const [showSearch, setShowSearch] = useState(false);
   const [hasSelection, setHasSelection] = useState(false);
   const shortcuts = useShortcutStore((s) => s.shortcuts);
@@ -114,6 +113,14 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
     requestAnimationFrame(() => {
       inst.fitAddon.fit();
+      // 不依赖 ResizeObserver 首帧 fire 把 PTY 尺寸同步给后端：后端 PTY 创建时
+      // cols/rows 是连接请求里硬编码的 80x24，vi 等全屏程序依赖准确 rows，
+      // 这里挂载完成立刻补一次，避免初次 fire 被 active 状态或时序错过。
+      const dims = inst.fitAddon.proposeDimensions();
+      if (dims && dims.cols > 0 && dims.rows > 0) {
+        const resizeFn = isSerial ? ResizeSerialTerminal : ResizeSSH;
+        resizeFn(sessionId, dims.cols, dims.rows).catch(console.error);
+      }
     });
 
     inst.bridge.setOnFilter(() => setShowSearch((v) => !v));
@@ -134,13 +141,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
     let resizeTimer = 0;
     const resizeObserver = new ResizeObserver(() => {
-      if (!activeRef.current) return;
       clearTimeout(resizeTimer);
       resizeTimer = window.setTimeout(() => {
-        if (!activeRef.current) return;
         inst.fitAddon.fit();
         const dims = inst.fitAddon.proposeDimensions();
-        if (dims) {
+        if (dims && dims.cols > 0 && dims.rows > 0) {
           const resizeFn = isSerial ? ResizeSerialTerminal : ResizeSSH;
           resizeFn(sessionId, dims.cols, dims.rows).catch(console.error);
         }
@@ -185,10 +190,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     const inst = getTerminalInstance(sessionId);
     if (inst) inst.bridge.setShortcuts(shortcuts);
   }, [sessionId, shortcuts]);
-
-  useEffect(() => {
-    activeRef.current = active;
-  }, [active]);
 
   useEffect(() => {
     if (active) {
