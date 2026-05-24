@@ -9,6 +9,7 @@ describe("AssetType Registry", () => {
     expect(getAssetType("mongodb")).toBeDefined();
     expect(getAssetType("kafka")).toBeDefined();
     expect(getAssetType("k8s")).toBeDefined();
+    expect(getAssetType("etcd")).toBeDefined();
   });
 
   it("returns undefined for unknown type", () => {
@@ -20,6 +21,7 @@ describe("AssetType Registry", () => {
     expect(isBuiltinType("mongodb")).toBe(true);
     expect(isBuiltinType("kafka")).toBe(true);
     expect(isBuiltinType("k8s")).toBe(true);
+    expect(isBuiltinType("etcd")).toBe(true);
     expect(isBuiltinType("unknown")).toBe(false);
   });
 
@@ -28,6 +30,7 @@ describe("AssetType Registry", () => {
       "ssh",
       "database",
       "redis",
+      "etcd",
       "mongodb",
       "kafka",
       "k8s",
@@ -53,6 +56,7 @@ describe("AssetType Registry", () => {
     expect(getAssetType("redis")!.connectAction).toBe("query");
     expect(getAssetType("mongodb")!.connectAction).toBe("query");
     expect(getAssetType("kafka")!.connectAction).toBe("query");
+    expect(getAssetType("etcd")!.connectAction).toBe("query");
   });
 
   it("only ssh supports new tab", () => {
@@ -61,5 +65,6 @@ describe("AssetType Registry", () => {
     expect(getAssetType("mongodb")!.canConnectInNewTab).toBe(false);
     expect(getAssetType("kafka")!.canConnectInNewTab).toBe(false);
     expect(getAssetType("k8s")!.canConnectInNewTab).toBe(false);
+    expect(getAssetType("etcd")!.canConnectInNewTab).toBe(false);
   });
 });
