@@ -2,7 +2,15 @@ import { create } from "zustand";
 import { ExecuteSQL } from "../../wailsjs/go/query/Query";
 import { RedisGetKeyDetail, RedisListDatabases, RedisScanKeys } from "../../wailsjs/go/redis/Redis";
 import { ListMongoDatabases, ListMongoCollections } from "../../wailsjs/go/query/Query";
-import { asset_entity } from "../../wailsjs/go/models";
+import {
+  EtcdRangeKeys,
+  EtcdGetKey,
+  EtcdPutKey,
+  EtcdDeleteKeys,
+  EtcdGetStatus,
+  EtcdGetMembers,
+} from "../../wailsjs/go/etcd/Etcd";
+import { asset_entity, etcd_svc } from "../../wailsjs/go/models";
 import { useTabStore, registerTabCloseHook, registerTabRestoreHook, type QueryTabMeta } from "./tabStore";
 import { useAssetStore } from "./assetStore";
 
@@ -77,6 +85,34 @@ export interface RedisTabState {
   error: string | null;
 }
 
+export interface EtcdWatchLog {
+  type: string;
+  key: string;
+  value?: string;
+  prevValue?: string;
+  revision: number;
+  time: string;
+}
+
+export interface EtcdTabState {
+  prefix: string;
+  keys: etcd_svc.EtcdKeyValue[];
+  loadingKeys: boolean;
+  selectedKey: string | null;
+  keyDetail: etcd_svc.EtcdKeyValue | null;
+  keyEditValue: string;
+  status: etcd_svc.EtcdStatus | null;
+  members: etcd_svc.EtcdMember[];
+  activeTab: "keys" | "cluster" | "watch";
+  viewMode: "list" | "tree";
+  treeExpanded: string[];
+  watchPrefix: string;
+  isWatching: boolean;
+  watchLogs: EtcdWatchLog[];
+  watchId: string;
+  error: string | null;
+}
+
 export type MongoInnerTab =
   | { id: string; type: "collection"; database: string; collection: string; pendingLoad?: boolean }
   | {
@@ -104,6 +140,7 @@ interface QueryState {
   dbStates: Record<string, DatabaseTabState>;
   redisStates: Record<string, RedisTabState>;
   mongoStates: Record<string, MongoDBTabState>;
+  etcdStates: Record<string, EtcdTabState>;
 
   openQueryTab: (asset: asset_entity.Asset, opts?: { initialSQL?: string; initialMongo?: string }) => void;
 
@@ -143,6 +180,23 @@ interface QueryState {
   setActiveMongoInnerTab: (tabId: string, innerTabId: string) => void;
   updateMongoInnerTab: (tabId: string, innerTabId: string, patch: Record<string, unknown>) => void;
   markMongoCollectionTabLoaded: (tabId: string, innerTabId: string) => void;
+
+  // Etcd actions
+  loadEtcdKeys: (tabId: string) => Promise<void>;
+  selectEtcdKey: (tabId: string, key: string) => Promise<void>;
+  setEtcdPrefix: (tabId: string, prefix: string) => void;
+  setEtcdViewMode: (tabId: string, mode: "list" | "tree") => void;
+  toggleEtcdTreeNode: (tabId: string, path: string) => void;
+  setEtcdActiveTab: (tabId: string, tab: "keys" | "cluster" | "watch") => void;
+  loadEtcdStatus: (tabId: string) => Promise<void>;
+  loadEtcdMembers: (tabId: string) => Promise<void>;
+  setEtcdWatchPrefix: (tabId: string, prefix: string) => void;
+  setEtcdWatching: (tabId: string, watching: boolean, watchId?: string) => void;
+  appendEtcdWatchLog: (tabId: string, log: EtcdWatchLog) => void;
+  clearEtcdWatchLogs: (tabId: string) => void;
+  setEtcdKeyEditValue: (tabId: string, value: string) => void;
+  putEtcdKey: (tabId: string, key: string, value: string) => Promise<void>;
+  deleteEtcdKeys: (tabId: string, keys: string[]) => Promise<void>;
 }
 
 // --- Helpers ---
@@ -179,6 +233,27 @@ function defaultRedisState(options: { database?: number } = {}): RedisTabState {
     keyDetailRequestId: 0,
     openKeyTabs: [],
     activeRedisKey: null,
+    error: null,
+  };
+}
+
+function defaultEtcdState(): EtcdTabState {
+  return {
+    prefix: "",
+    keys: [],
+    loadingKeys: false,
+    selectedKey: null,
+    keyDetail: null,
+    keyEditValue: "",
+    status: null,
+    members: [],
+    activeTab: "keys",
+    viewMode: "tree",
+    treeExpanded: [],
+    watchPrefix: "",
+    isWatching: false,
+    watchLogs: [],
+    watchId: "",
     error: null,
   };
 }
@@ -308,6 +383,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   dbStates: {},
   redisStates: {},
   mongoStates: {},
+  etcdStates: {},
 
   openQueryTab: (asset, opts) => {
     const tabId = makeTabId(asset.ID);
@@ -392,7 +468,9 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         redisStates: { ...s.redisStates, [tabId]: defaultRedisState({ database: redisDatabase }) },
       }));
     } else if (asset.Type === "etcd") {
-      // EtcdPanel manages its own local state
+      set((s) => ({
+        etcdStates: { ...s.etcdStates, [tabId]: defaultEtcdState() },
+      }));
     }
   },
 
@@ -1219,6 +1297,280 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       },
     }));
   },
+
+  // --- Etcd ---
+
+  loadEtcdKeys: async (tabId) => {
+    const tab = getQueryTabFromTabStore(tabId);
+    const state = get().etcdStates[tabId];
+    if (!tab || !state) return;
+    set((s) => ({
+      etcdStates: {
+        ...s.etcdStates,
+        [tabId]: { ...state, loadingKeys: true, error: null },
+      },
+    }));
+    try {
+      const result = await EtcdRangeKeys({
+        assetId: tab.assetId,
+        prefix: state.prefix || "",
+        limit: 100,
+      });
+      set((s) => ({
+        etcdStates: {
+          ...s.etcdStates,
+          [tabId]: {
+            ...s.etcdStates[tabId],
+            keys: result.keys || [],
+            loadingKeys: false,
+            error: null,
+          },
+        },
+      }));
+    } catch (err) {
+      set((s) => ({
+        etcdStates: {
+          ...s.etcdStates,
+          [tabId]: { ...s.etcdStates[tabId], loadingKeys: false, error: String(err) },
+        },
+      }));
+    }
+  },
+
+  selectEtcdKey: async (tabId, key) => {
+    const tab = getQueryTabFromTabStore(tabId);
+    const state = get().etcdStates[tabId];
+    if (!tab || !state) return;
+    set((s) => ({
+      etcdStates: {
+        ...s.etcdStates,
+        [tabId]: { ...s.etcdStates[tabId], selectedKey: key, keyDetail: null },
+      },
+    }));
+    try {
+      const detail = await EtcdGetKey({ assetId: tab.assetId, key });
+      set((s) => {
+        const current = s.etcdStates[tabId];
+        if (!current || current.selectedKey !== key) return s;
+        return {
+          etcdStates: {
+            ...s.etcdStates,
+            [tabId]: { ...current, keyDetail: detail, keyEditValue: detail.value || "" },
+          },
+        };
+      });
+    } catch (err) {
+      set((s) => ({
+        etcdStates: {
+          ...s.etcdStates,
+          [tabId]: { ...s.etcdStates[tabId], error: String(err) },
+        },
+      }));
+    }
+  },
+
+  setEtcdPrefix: (tabId, prefix) => {
+    const state = get().etcdStates[tabId];
+    if (!state) return;
+    set((s) => ({
+      etcdStates: {
+        ...s.etcdStates,
+        [tabId]: { ...state, prefix, selectedKey: null, keyDetail: null },
+      },
+    }));
+  },
+
+  setEtcdViewMode: (tabId, mode) => {
+    const state = get().etcdStates[tabId];
+    if (!state) return;
+    set((s) => ({
+      etcdStates: {
+        ...s.etcdStates,
+        [tabId]: { ...state, viewMode: mode },
+      },
+    }));
+  },
+
+  toggleEtcdTreeNode: (tabId, path) => {
+    const state = get().etcdStates[tabId];
+    if (!state) return;
+    const expanded = new Set(state.treeExpanded);
+    if (expanded.has(path)) {
+      expanded.delete(path);
+    } else {
+      expanded.add(path);
+    }
+    set((s) => ({
+      etcdStates: {
+        ...s.etcdStates,
+        [tabId]: { ...state, treeExpanded: Array.from(expanded) },
+      },
+    }));
+  },
+
+  setEtcdActiveTab: (tabId, tab) => {
+    const state = get().etcdStates[tabId];
+    if (!state) return;
+    set((s) => ({
+      etcdStates: {
+        ...s.etcdStates,
+        [tabId]: { ...state, activeTab: tab },
+      },
+    }));
+  },
+
+  loadEtcdStatus: async (tabId) => {
+    const tab = getQueryTabFromTabStore(tabId);
+    const state = get().etcdStates[tabId];
+    if (!tab || !state) return;
+    try {
+      const result = await EtcdGetStatus(tab.assetId);
+      set((s) => ({
+        etcdStates: {
+          ...s.etcdStates,
+          [tabId]: { ...s.etcdStates[tabId], status: result },
+        },
+      }));
+    } catch (err) {
+      set((s) => ({
+        etcdStates: {
+          ...s.etcdStates,
+          [tabId]: { ...s.etcdStates[tabId], error: String(err) },
+        },
+      }));
+    }
+  },
+
+  loadEtcdMembers: async (tabId) => {
+    const tab = getQueryTabFromTabStore(tabId);
+    const state = get().etcdStates[tabId];
+    if (!tab || !state) return;
+    try {
+      const result = await EtcdGetMembers(tab.assetId);
+      set((s) => ({
+        etcdStates: {
+          ...s.etcdStates,
+          [tabId]: { ...s.etcdStates[tabId], members: result || [] },
+        },
+      }));
+    } catch (err) {
+      set((s) => ({
+        etcdStates: {
+          ...s.etcdStates,
+          [tabId]: { ...s.etcdStates[tabId], error: String(err) },
+        },
+      }));
+    }
+  },
+
+  setEtcdWatchPrefix: (tabId, prefix) => {
+    const state = get().etcdStates[tabId];
+    if (!state) return;
+    set((s) => ({
+      etcdStates: {
+        ...s.etcdStates,
+        [tabId]: { ...state, watchPrefix: prefix },
+      },
+    }));
+  },
+
+  setEtcdWatching: (tabId, watching, watchId = "") => {
+    const state = get().etcdStates[tabId];
+    if (!state) return;
+    set((s) => ({
+      etcdStates: {
+        ...s.etcdStates,
+        [tabId]: { ...state, isWatching: watching, watchId },
+      },
+    }));
+  },
+
+  appendEtcdWatchLog: (tabId, log) => {
+    const state = get().etcdStates[tabId];
+    if (!state) return;
+    set((s) => ({
+      etcdStates: {
+        ...s.etcdStates,
+        [tabId]: { ...state, watchLogs: [...state.watchLogs, log] },
+      },
+    }));
+  },
+
+  clearEtcdWatchLogs: (tabId) => {
+    const state = get().etcdStates[tabId];
+    if (!state) return;
+    set((s) => ({
+      etcdStates: {
+        ...s.etcdStates,
+        [tabId]: { ...state, watchLogs: [] },
+      },
+    }));
+  },
+
+  setEtcdKeyEditValue: (tabId, value) => {
+    const state = get().etcdStates[tabId];
+    if (!state) return;
+    set((s) => ({
+      etcdStates: {
+        ...s.etcdStates,
+        [tabId]: { ...state, keyEditValue: value },
+      },
+    }));
+  },
+
+  putEtcdKey: async (tabId, key, value) => {
+    const tab = getQueryTabFromTabStore(tabId);
+    const state = get().etcdStates[tabId];
+    if (!tab || !state) return;
+    try {
+      await EtcdPutKey({ assetId: tab.assetId, key, value });
+      set((s) => ({
+        etcdStates: {
+          ...s.etcdStates,
+          [tabId]: {
+            ...s.etcdStates[tabId],
+            keyDetail: s.etcdStates[tabId].keyDetail ? { ...s.etcdStates[tabId].keyDetail, value } : null,
+          },
+        },
+      }));
+    } catch (err) {
+      set((s) => ({
+        etcdStates: {
+          ...s.etcdStates,
+          [tabId]: { ...s.etcdStates[tabId], error: String(err) },
+        },
+      }));
+    }
+  },
+
+  deleteEtcdKeys: async (tabId, keys) => {
+    const tab = getQueryTabFromTabStore(tabId);
+    const state = get().etcdStates[tabId];
+    if (!tab || !state) return;
+    try {
+      await EtcdDeleteKeys({ assetId: tab.assetId, keys });
+      const selected = state.selectedKey;
+      const newSelected = selected && keys.includes(selected) ? null : selected;
+      const newDetail = newSelected === null ? null : state.keyDetail;
+      set((s) => ({
+        etcdStates: {
+          ...s.etcdStates,
+          [tabId]: {
+            ...s.etcdStates[tabId],
+            selectedKey: newSelected,
+            keyDetail: newDetail,
+          },
+        },
+      }));
+    } catch (err) {
+      set((s) => ({
+        etcdStates: {
+          ...s.etcdStates,
+          [tabId]: { ...s.etcdStates[tabId], error: String(err) },
+        },
+      }));
+    }
+  },
 }));
 
 // === Persistence ===
@@ -1330,7 +1682,14 @@ registerTabCloseHook((tab) => {
     delete newRedisStates[tab.id];
     const newMongoStates = { ...s.mongoStates };
     delete newMongoStates[tab.id];
-    return { dbStates: newDbStates, redisStates: newRedisStates, mongoStates: newMongoStates };
+    const newEtcdStates = { ...s.etcdStates };
+    delete newEtcdStates[tab.id];
+    return {
+      dbStates: newDbStates,
+      redisStates: newRedisStates,
+      mongoStates: newMongoStates,
+      etcdStates: newEtcdStates,
+    };
   });
 });
 
@@ -1344,6 +1703,7 @@ registerTabRestoreHook("query", (tabs) => {
   const dbStates: Record<string, DatabaseTabState> = {};
   const redisStates: Record<string, RedisTabState> = {};
   const mongoStates: Record<string, MongoDBTabState> = {};
+  const etcdStates: Record<string, EtcdTabState> = {};
 
   for (const tab of tabs) {
     const m = tab.meta as QueryTabMeta;
@@ -1379,10 +1739,12 @@ registerTabRestoreHook("query", (tabs) => {
       }
     } else if (m.assetType === "redis") {
       redisStates[tab.id] = defaultRedisState({ database: m.redisDatabase });
+    } else if (m.assetType === "etcd") {
+      etcdStates[tab.id] = defaultEtcdState();
     }
   }
 
-  useQueryStore.setState({ dbStates, redisStates, mongoStates });
+  useQueryStore.setState({ dbStates, redisStates, mongoStates, etcdStates });
   _persistReady = true;
 
   // Drop stale persisted entries (tabs no longer open) by writing the current

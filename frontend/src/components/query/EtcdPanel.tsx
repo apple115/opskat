@@ -20,17 +20,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { EventsOn, EventsOff } from "../../../wailsjs/runtime/runtime";
-import {
-  EtcdRangeKeys,
-  EtcdGetKey,
-  EtcdPutKey,
-  EtcdDeleteKeys,
-  EtcdGetStatus,
-  EtcdGetMembers,
-  EtcdStartWatch,
-  EtcdStopWatch,
-} from "../../../wailsjs/go/etcd/Etcd";
+import { EtcdStartWatch, EtcdStopWatch } from "../../../wailsjs/go/etcd/Etcd";
 import { etcd_svc } from "../../../wailsjs/go/models";
+import { useQueryStore, type EtcdTabState } from "@/stores/queryStore";
 import { EtcdCreateKeyDialog } from "./EtcdCreateKeyDialog";
 import { buildKeyTree, flattenTree, type RedisFlatTreeRow } from "@/lib/redisKeyTree";
 
@@ -40,95 +32,81 @@ interface EtcdPanelProps {
 
 const PAGE_SIZE = 100;
 
+const FALLBACK_ETCD_STATE: EtcdTabState = {
+  prefix: "",
+  keys: [],
+  loadingKeys: false,
+  selectedKey: null,
+  keyDetail: null,
+  keyEditValue: "",
+  status: null,
+  members: [],
+  activeTab: "keys",
+  viewMode: "tree",
+  treeExpanded: [],
+  watchPrefix: "",
+  isWatching: false,
+  watchLogs: [],
+  watchId: "",
+  error: null,
+};
+
 export function EtcdPanel({ tabId }: EtcdPanelProps) {
   const { t } = useTranslation();
   const assetId = parseInt(tabId.replace("query-", ""), 10) || 0;
 
-  const [prefix, setPrefix] = useState("");
-  const [keys, setKeys] = useState<etcd_svc.EtcdKeyValue[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [detail, setDetail] = useState<etcd_svc.EtcdKeyValue | null>(null);
-  const [editValue, setEditValue] = useState("");
-  const [status, setStatus] = useState<etcd_svc.EtcdStatus | null>(null);
-  const [members, setMembers] = useState<etcd_svc.EtcdMember[]>([]);
-  const [activeTab, setActiveTab] = useState("keys");
+  const state = useQueryStore((s) => s.etcdStates[tabId]);
+  const loadEtcdKeys = useQueryStore((s) => s.loadEtcdKeys);
+  const selectEtcdKey = useQueryStore((s) => s.selectEtcdKey);
+  const setEtcdPrefix = useQueryStore((s) => s.setEtcdPrefix);
+  const setEtcdViewMode = useQueryStore((s) => s.setEtcdViewMode);
+  const toggleEtcdTreeNode = useQueryStore((s) => s.toggleEtcdTreeNode);
+  const setEtcdActiveTab = useQueryStore((s) => s.setEtcdActiveTab);
+  const loadEtcdStatus = useQueryStore((s) => s.loadEtcdStatus);
+  const loadEtcdMembers = useQueryStore((s) => s.loadEtcdMembers);
+  const setEtcdWatchPrefix = useQueryStore((s) => s.setEtcdWatchPrefix);
+  const setEtcdWatching = useQueryStore((s) => s.setEtcdWatching);
+  const appendEtcdWatchLog = useQueryStore((s) => s.appendEtcdWatchLog);
+  const clearEtcdWatchLogs = useQueryStore((s) => s.clearEtcdWatchLogs);
+  const setEtcdKeyEditValue = useQueryStore((s) => s.setEtcdKeyEditValue);
+  const putEtcdKey = useQueryStore((s) => s.putEtcdKey);
+  const deleteEtcdKeys = useQueryStore((s) => s.deleteEtcdKeys);
+
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-
-  // Tree view state
-  const [viewMode, setViewMode] = useState<"list" | "tree">("tree");
-  const [treeExpanded, setTreeExpanded] = useState<Set<string>>(new Set());
-
-  // Watch state
-  const [watchPrefix, setWatchPrefix] = useState("");
-  const [isWatching, setIsWatching] = useState(false);
-  const [watchLogs, setWatchLogs] = useState<
-    Array<{ type: string; key: string; value?: string; prevValue?: string; revision: number; time: string }>
-  >([]);
-  const watchIdRef = useRef<string>("");
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  const fetchKeys = useCallback(async () => {
-    if (!assetId) return;
-    setLoading(true);
-    try {
-      const result = await EtcdRangeKeys({
-        assetId,
-        prefix: prefix || "",
-        limit: PAGE_SIZE,
-      });
-      setKeys(result.keys || []);
-    } catch (err) {
-      toast.error(String(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [assetId, prefix]);
+  const {
+    prefix,
+    keys,
+    loadingKeys: loading,
+    selectedKey,
+    keyDetail: detail,
+    keyEditValue: editValue,
+    status,
+    members,
+    activeTab,
+    viewMode,
+    treeExpanded,
+    watchPrefix,
+    isWatching,
+    watchLogs,
+    watchId,
+  } = state ?? FALLBACK_ETCD_STATE;
 
-  const fetchDetail = useCallback(
-    async (key: string) => {
-      if (!assetId) return;
-      try {
-        const result = await EtcdGetKey({ assetId, key });
-        setDetail(result);
-        setEditValue(result.value || "");
-      } catch (err) {
-        toast.error(String(err));
-      }
-    },
-    [assetId]
-  );
-
-  const fetchStatus = useCallback(async () => {
-    if (!assetId) return;
-    try {
-      const result = await EtcdGetStatus(assetId);
-      setStatus(result);
-    } catch (err) {
-      toast.error(String(err));
-    }
-  }, [assetId]);
-
-  const fetchMembers = useCallback(async () => {
-    if (!assetId) return;
-    try {
-      const result = await EtcdGetMembers(assetId);
-      setMembers(result || []);
-    } catch (err) {
-      toast.error(String(err));
-    }
-  }, [assetId]);
-
+  // Load keys on mount / prefix change
   useEffect(() => {
-    fetchKeys();
-  }, [fetchKeys]);
-
-  useEffect(() => {
-    if (activeTab === "cluster") {
-      fetchStatus();
-      fetchMembers();
+    if (assetId) {
+      loadEtcdKeys(tabId);
     }
-  }, [activeTab, fetchStatus, fetchMembers]);
+  }, [assetId, prefix, tabId, loadEtcdKeys]);
+
+  // Load cluster info when tab switches to cluster
+  useEffect(() => {
+    if (activeTab === "cluster" && assetId) {
+      loadEtcdStatus(tabId);
+      loadEtcdMembers(tabId);
+    }
+  }, [activeTab, assetId, tabId, loadEtcdStatus, loadEtcdMembers]);
 
   // Watch event listener
   useEffect(() => {
@@ -144,24 +122,21 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
         revision: number;
         timestamp: number;
       }) => {
-        setWatchLogs((prev) => [
-          ...prev,
-          {
-            type: event.type,
-            key: event.key,
-            value: event.value,
-            prevValue: event.prevValue,
-            revision: event.revision,
-            time: new Date(event.timestamp).toLocaleTimeString(),
-          },
-        ]);
+        appendEtcdWatchLog(tabId, {
+          type: event.type,
+          key: event.key,
+          value: event.value,
+          prevValue: event.prevValue,
+          revision: event.revision,
+          time: new Date(event.timestamp).toLocaleTimeString(),
+        });
       }
     );
     return () => {
       cancel();
       EventsOff(eventName);
     };
-  }, [isWatching, assetId]);
+  }, [isWatching, assetId, tabId, appendEtcdWatchLog]);
 
   // Auto-scroll watch logs
   useEffect(() => {
@@ -170,12 +145,21 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
     }
   }, [watchLogs]);
 
+  // Cleanup watch on unmount
+  useEffect(() => {
+    return () => {
+      if (watchId) {
+        EtcdStopWatch(watchId);
+        setEtcdWatching(tabId, false, "");
+      }
+    };
+  }, [tabId, watchId, setEtcdWatching]);
+
   const startWatch = async () => {
     if (!assetId || isWatching) return;
     try {
       const watchID = await EtcdStartWatch(assetId, watchPrefix || "");
-      watchIdRef.current = watchID;
-      setIsWatching(true);
+      setEtcdWatching(tabId, true, watchID);
       toast.success(t("query.watchStarted"));
     } catch (err) {
       toast.error(String(err));
@@ -183,75 +167,46 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
   };
 
   const stopWatch = () => {
-    if (watchIdRef.current) {
-      EtcdStopWatch(watchIdRef.current);
-      watchIdRef.current = "";
+    if (watchId) {
+      EtcdStopWatch(watchId);
+      setEtcdWatching(tabId, false, "");
     }
-    setIsWatching(false);
-  };
-
-  const clearWatchLogs = () => {
-    setWatchLogs([]);
   };
 
   const handleSelectKey = (kv: etcd_svc.EtcdKeyValue) => {
-    setSelectedKey(kv.key);
-    fetchDetail(kv.key);
+    selectEtcdKey(tabId, kv.key);
   };
 
   const handleCreatedKey = async (createdKey: string) => {
-    setPrefix("");
-    await fetchKeys();
-    setSelectedKey(createdKey);
-    await fetchDetail(createdKey);
+    setEtcdPrefix(tabId, "");
+    await loadEtcdKeys(tabId);
+    await selectEtcdKey(tabId, createdKey);
     toast.success(t("query.createEtcdKeySuccess"));
   };
 
-  const toggleTreeNode = useCallback((nodeId: string) => {
-    setTreeExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(nodeId)) {
-        next.delete(nodeId);
-      } else {
-        next.add(nodeId);
-      }
-      return next;
-    });
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (watchIdRef.current) {
-        EtcdStopWatch(watchIdRef.current);
-        watchIdRef.current = "";
-      }
-    };
-  }, []);
-
   const handlePut = async () => {
-    if (!assetId || !selectedKey) return;
+    if (!selectedKey) return;
     try {
-      await EtcdPutKey({ assetId, key: selectedKey, value: editValue });
+      await putEtcdKey(tabId, selectedKey, editValue);
       toast.success(t("saveSuccess"));
-      fetchKeys();
-      fetchDetail(selectedKey);
+      await loadEtcdKeys(tabId);
+      await selectEtcdKey(tabId, selectedKey);
     } catch (err) {
       toast.error(String(err));
     }
   };
 
   const handleDelete = async (key: string) => {
-    if (!assetId) return;
     try {
-      await EtcdDeleteKeys({ assetId, keys: [key] });
+      await deleteEtcdKeys(tabId, [key]);
       toast.success(t("deleteSuccess"));
-      setSelectedKey(null);
-      setDetail(null);
-      fetchKeys();
+      await loadEtcdKeys(tabId);
     } catch (err) {
       toast.error(String(err));
     }
   };
+
+  const expandedSet = useCallback(() => new Set(treeExpanded), [treeExpanded]);
 
   return (
     <div className="flex h-full">
@@ -260,20 +215,20 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
         <div className="flex items-center gap-2 p-3">
           <Input
             value={prefix}
-            onChange={(e) => setPrefix(e.target.value)}
+            onChange={(e) => setEtcdPrefix(tabId, e.target.value)}
             placeholder={t("query.etcdPrefix")}
-            onKeyDown={(e) => e.key === "Enter" && fetchKeys()}
+            onKeyDown={(e) => e.key === "Enter" && loadEtcdKeys(tabId)}
           />
-          <Button size="icon" variant="ghost" onClick={fetchKeys} disabled={loading}>
+          <Button size="icon" variant="ghost" onClick={() => loadEtcdKeys(tabId)} disabled={loading}>
             <Search className="h-4 w-4" />
           </Button>
-          <Button size="icon" variant="ghost" onClick={fetchKeys} disabled={loading}>
+          <Button size="icon" variant="ghost" onClick={() => loadEtcdKeys(tabId)} disabled={loading}>
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
           <Button
             size="icon"
             variant="ghost"
-            onClick={() => setViewMode((v) => (v === "list" ? "tree" : "list"))}
+            onClick={() => setEtcdViewMode(tabId, viewMode === "list" ? "tree" : "list")}
             title={viewMode === "list" ? t("query.treeView") : t("query.listView")}
           >
             {viewMode === "list" ? <FolderTree className="h-4 w-4" /> : <List className="h-4 w-4" />}
@@ -296,7 +251,7 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
                     keys.map((k) => k.key),
                     "/"
                   );
-                  const rows = flattenTree(tree, treeExpanded, "/");
+                  const rows = flattenTree(tree, expandedSet(), "/");
                   return rows.map((row: RedisFlatTreeRow) => {
                     const isKey = row.fullKey !== null;
                     const isFolder = row.hasChildren;
@@ -312,7 +267,7 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
                             const kv = keys.find((k) => k.key === row.fullKey);
                             if (kv) handleSelectKey(kv);
                           } else if (isFolder) {
-                            toggleTreeNode(row.nodeId);
+                            toggleEtcdTreeNode(tabId, row.nodeId);
                           }
                         }}
                       >
@@ -323,7 +278,7 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
                               className="flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-accent"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleTreeNode(row.nodeId);
+                                toggleEtcdTreeNode(tabId, row.nodeId);
                               }}
                             >
                               {row.isExpanded ? (
@@ -400,7 +355,11 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
 
       {/* Right: Detail / Cluster */}
       <div className="flex flex-1 flex-col">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col">
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setEtcdActiveTab(tabId, v as "keys" | "cluster" | "watch")}
+          className="flex flex-1 flex-col"
+        >
           <div className="border-b px-4">
             <TabsList>
               <TabsTrigger value="keys">{t("query.keys")}</TabsTrigger>
@@ -436,7 +395,7 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
                 <textarea
                   className="flex-1 rounded-md border bg-background p-3 font-mono text-sm resize-none"
                   value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
+                  onChange={(e) => setEtcdKeyEditValue(tabId, e.target.value)}
                 />
               </div>
             ) : (
@@ -450,7 +409,7 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
             <div className="flex items-center gap-2">
               <Input
                 value={watchPrefix}
-                onChange={(e) => setWatchPrefix(e.target.value)}
+                onChange={(e) => setEtcdWatchPrefix(tabId, e.target.value)}
                 placeholder={t("query.watchPrefix")}
                 disabled={isWatching}
                 className="flex-1"
@@ -466,7 +425,7 @@ export function EtcdPanel({ tabId }: EtcdPanelProps) {
                   {t("query.stopWatch")}
                 </Button>
               )}
-              <Button variant="outline" onClick={clearWatchLogs} disabled={watchLogs.length === 0}>
+              <Button variant="outline" onClick={() => clearEtcdWatchLogs(tabId)} disabled={watchLogs.length === 0}>
                 {t("query.clearWatchLogs")}
               </Button>
             </div>
